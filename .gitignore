@@ -1,0 +1,12 @@
+# IntelliJ
+.idea/
+*.iml
+
+# Java
+target/
+
+# Node
+node_modules/
+
+# Env
+.env
