@@ -1,4 +1,5 @@
 package org.example;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import org.apache.poi.ss.usermodel.*;
@@ -60,6 +61,7 @@ public class EmployeeSalaryCalculator {
         String createdDate;    // yyyy-MM-dd
         String shippedDate;    // yyyy-MM-dd
         String orderNumber;
+        String description;    // описание заказа (customerorder.description)
         String serviceName;    // название услуги или "ИТОГО по заказу"
         double serviceSum;     // сумма услуги (доля сотрудника), руб.
         double service40;      // 40% от этой суммы, руб.
@@ -86,7 +88,6 @@ public class EmployeeSalaryCalculator {
     private static final String SMTP_USER = "jumpup@mail.ru";
     private static final String SMTP_PASS  = "jR0zcDhXUvUt71Y3j67S";
     private static final String FROM_EMAIL = SMTP_USER;
-
 
     // Email-адреса сотрудников (НУЖНО ПОДСТАВИТЬ РЕАЛЬНЫЕ)
     private static final Map<String, String> workerEmails = Map.of(
@@ -257,12 +258,6 @@ public class EmployeeSalaryCalculator {
 
     /**
      * Обработка одного заказа: фильтры + расчёт по конкретному сотруднику.
-     */
-    /**
-     * Обработка одного заказа: фильтры + расчёт по конкретному сотруднику.
-     */
-    /**
-     * Обработка одного заказа: фильтры + расчёт по конкретному сотруднику.
      * Обязательно должна быть ОТГРУЗКА, и именно её дата попадает в период.
      */
     public static void processSingleOrderForWorker(JsonNode order,
@@ -270,6 +265,7 @@ public class EmployeeSalaryCalculator {
                                                    String authHeader,
                                                    WeekPeriod period) throws Exception {
         String orderName = order.path("name").asText("");
+        String description = order.path("description").asText(""); // ✅ берём описание
 
         // 1) Сумма заказа (100%). Нулевые/отрицательные — сразу мимо.
         double sumMinor = order.path("sum").asDouble();
@@ -417,6 +413,7 @@ public class EmployeeSalaryCalculator {
                 er.createdDate = createdDate;
                 er.shippedDate = shippedDate;
                 er.orderNumber = orderName;
+                er.description = description; // ✅ кладём описание в строку
                 er.serviceName = assortment.path("name").asText("");
                 er.serviceSum  = workerServiceRub;
                 er.service40   = worker40Rub;
@@ -437,6 +434,7 @@ public class EmployeeSalaryCalculator {
         totalRow.createdDate = createdDate;
         totalRow.shippedDate = shippedDate;
         totalRow.orderNumber = orderName;
+        totalRow.description = description; // ✅ чтобы в итого тоже было
         totalRow.serviceName = "ИТОГО по заказу";
         totalRow.serviceSum  = workerServicesOrderRub;
         totalRow.service40   = worker40OrderRub;
@@ -478,7 +476,6 @@ public class EmployeeSalaryCalculator {
 
         return name;
     }
-
 
     /**
      * Распаковка возможного gzip-ответа
@@ -548,6 +545,10 @@ public class EmployeeSalaryCalculator {
         CellStyle numberStyle = wb.createCellStyle();
         numberStyle.setDataFormat(numFmt);
 
+        // ✅ стиль переноса строк для описания
+        CellStyle wrapStyle = wb.createCellStyle();
+        wrapStyle.setWrapText(true);
+
         CreationHelper creationHelper = wb.getCreationHelper();
 
         String periodText = "Неделя для расчёта: c " +
@@ -560,6 +561,7 @@ public class EmployeeSalaryCalculator {
                 "Дата создания",
                 "Дата отгрузки",
                 "Номер заказа",
+                "Описание",
                 "Услуга",
                 "Сумма услуги",
                 "40%",
@@ -601,17 +603,22 @@ public class EmployeeSalaryCalculator {
                 r.createCell(0).setCellValue(er.createdDate != null ? er.createdDate : "");
                 r.createCell(1).setCellValue(er.shippedDate != null ? er.shippedDate : "");
                 r.createCell(2).setCellValue(er.orderNumber != null ? er.orderNumber : "");
-                r.createCell(3).setCellValue(er.serviceName != null ? er.serviceName : "");
 
-                Cell sumCell = r.createCell(4);
+                Cell descCell = r.createCell(3);
+                descCell.setCellValue(er.description != null ? er.description : "");
+                descCell.setCellStyle(wrapStyle);
+
+                r.createCell(4).setCellValue(er.serviceName != null ? er.serviceName : "");
+
+                Cell sumCell = r.createCell(5);
                 sumCell.setCellValue(er.serviceSum);
                 sumCell.setCellStyle(numberStyle);
 
-                Cell p40Cell = r.createCell(5);
+                Cell p40Cell = r.createCell(6);
                 p40Cell.setCellValue(er.service40);
                 p40Cell.setCellStyle(numberStyle);
 
-                Cell linkCell = r.createCell(6);
+                Cell linkCell = r.createCell(7);
                 if (er.link != null && !er.link.isBlank()) {
                     linkCell.setCellValue("Открыть");
                     Hyperlink hyperlink = creationHelper.createHyperlink(HyperlinkType.URL);
@@ -630,7 +637,7 @@ public class EmployeeSalaryCalculator {
                 sheet.setColumnWidth(i, width + 512); // небольшой запас
             }
 
-            // объединяем ячейки по заказам (A,B,C,G)
+            // объединяем ячейки по заказам (A,B,C,H)
             mergeOrderBlocks(sheet, rows, dataStartRow);
 
             // в конце — строка ИТОГО по сотруднику
@@ -643,11 +650,11 @@ public class EmployeeSalaryCalculator {
                 c0.setCellValue("ИТОГО ПО СОТРУДНИКУ " + workerName);
                 c0.setCellStyle(headerStyle);
 
-                Cell totalServicesCell = totalRow.createCell(4);
+                Cell totalServicesCell = totalRow.createCell(5); // ✅ было 4
                 totalServicesCell.setCellValue(wt.workerServices);
                 totalServicesCell.setCellStyle(numberStyle);
 
-                Cell total40Cell = totalRow.createCell(5);
+                Cell total40Cell = totalRow.createCell(6); // ✅ было 5
                 total40Cell.setCellValue(wt.p40);
                 total40Cell.setCellStyle(numberStyle);
             }
@@ -726,7 +733,7 @@ public class EmployeeSalaryCalculator {
     }
 
     /**
-     * Объединение ячеек по заказам (для колонок A,B,C,G).
+     * Объединение ячеек по заказам (для колонок A,B,C,H).
      */
     private static void mergeOrderBlocks(Sheet sheet, List<ExcelRow> rows, int dataStartRow) {
         int currentRow = dataStartRow;
@@ -751,7 +758,7 @@ public class EmployeeSalaryCalculator {
                 int fromRow = currentRow;
                 int toRow = currentRow + groupSize - 1;
 
-                int[] colsToMerge = {0, 1, 2, 6}; // даты, номер, ссылка
+                int[] colsToMerge = {0, 1, 2, 7}; // ✅ даты, номер, ссылка (было 6)
                 for (int col : colsToMerge) {
                     sheet.addMergedRegion(new CellRangeAddress(fromRow, toRow, col, col));
                 }
@@ -821,6 +828,10 @@ public class EmployeeSalaryCalculator {
         CellStyle numberStyle = wb.createCellStyle();
         numberStyle.setDataFormat(numFmt);
 
+        // ✅ стиль переноса строк для описания
+        CellStyle wrapStyle = wb.createCellStyle();
+        wrapStyle.setWrapText(true);
+
         CreationHelper helper = wb.getCreationHelper();
 
         CellStyle linkStyle = wb.createCellStyle();
@@ -839,6 +850,7 @@ public class EmployeeSalaryCalculator {
                 "Дата создания",
                 "Дата отгрузки",
                 "Номер заказа",
+                "Описание",
                 "Услуга",
                 "Сумма услуги",
                 "40%",
@@ -875,17 +887,22 @@ public class EmployeeSalaryCalculator {
             r.createCell(0).setCellValue(er.createdDate != null ? er.createdDate : "");
             r.createCell(1).setCellValue(er.shippedDate != null ? er.shippedDate : "");
             r.createCell(2).setCellValue(er.orderNumber != null ? er.orderNumber : "");
-            r.createCell(3).setCellValue(er.serviceName != null ? er.serviceName : "");
 
-            Cell sCell = r.createCell(4);
+            Cell descCell = r.createCell(3);
+            descCell.setCellValue(er.description != null ? er.description : "");
+            descCell.setCellStyle(wrapStyle);
+
+            r.createCell(4).setCellValue(er.serviceName != null ? er.serviceName : "");
+
+            Cell sCell = r.createCell(5);
             sCell.setCellValue(er.serviceSum);
             sCell.setCellStyle(numberStyle);
 
-            Cell p40Cell = r.createCell(5);
+            Cell p40Cell = r.createCell(6);
             p40Cell.setCellValue(er.service40);
             p40Cell.setCellStyle(numberStyle);
 
-            Cell linkCell = r.createCell(6);
+            Cell linkCell = r.createCell(7);
             if (er.link != null && !er.link.isBlank()) {
                 linkCell.setCellValue("Открыть");
                 Hyperlink link = helper.createHyperlink(HyperlinkType.URL);
@@ -915,11 +932,11 @@ public class EmployeeSalaryCalculator {
         c0.setCellValue("ИТОГО ПО СОТРУДНИКУ " + workerName);
         c0.setCellStyle(headerStyle);
 
-        Cell totalServCell = totalRow.createCell(4);
+        Cell totalServCell = totalRow.createCell(5); // ✅ было 4
         totalServCell.setCellValue(wt.workerServices);
         totalServCell.setCellStyle(numberStyle);
 
-        Cell total40Cell = totalRow.createCell(5);
+        Cell total40Cell = totalRow.createCell(6); // ✅ было 5
         total40Cell.setCellValue(wt.p40);
         total40Cell.setCellStyle(numberStyle);
 
